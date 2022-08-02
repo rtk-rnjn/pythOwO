@@ -187,9 +187,7 @@ class Token:
         return self.type == type_ and self.value == value
 
     def __repr__(self):
-        if self.value:
-            return f"{self.type}:{self.value}"
-        return f"{self.type}"
+        return f"{self.type}:{self.value}" if self.value else f"{self.type}"
 
 
 #######################################
@@ -282,7 +280,7 @@ class Lexer:
         dot_count = 0
         pos_start = self.pos.copy()
 
-        while self.current_char != None and self.current_char in DIGITS + ".":
+        while self.current_char != None and self.current_char in f"{DIGITS}.":
             if self.current_char == ".":
                 if dot_count == 1:
                     break
@@ -308,11 +306,10 @@ class Lexer:
         ):
             if escape_character:
                 string += escape_characters.get(self.current_char, self.current_char)
+            elif self.current_char == "\\":
+                escape_character = True
             else:
-                if self.current_char == "\\":
-                    escape_character = True
-                else:
-                    string += self.current_char
+                string += self.current_char
             self.advance()
             escape_character = False
 
@@ -323,7 +320,7 @@ class Lexer:
         id_str = ""
         pos_start = self.pos.copy()
 
-        while self.current_char != None and self.current_char in LETTERS_DIGITS + "_":
+        while self.current_char != None and self.current_char in f"{LETTERS_DIGITS}_":
             id_str += self.current_char
             self.advance()
 
@@ -642,7 +639,6 @@ class Parser:
 
     def statements(self):
         res = ParseResult()
-        statements = []
         pos_start = self.current_tok.pos_start.copy()
 
         while self.current_tok.type == TT_NEWLINE:
@@ -652,8 +648,7 @@ class Parser:
         statement = res.register(self.statement())
         if res.error:
             return res
-        statements.append(statement)
-
+        statements = [statement]
         more_statements = True
 
         while True:
@@ -748,10 +743,7 @@ class Parser:
             res.register_advancement()
             self.advance()
             expr = res.register(self.expr())
-            if res.error:
-                return res
-            return res.success(VarAssignNode(var_name, expr))
-
+            return res if res.error else res.success(VarAssignNode(var_name, expr))
         node = res.register(
             self.bin_op(self.comp_expr, ((TT_KEYWORD, "AND"), (TT_KEYWORD, "OR")))
         )
@@ -776,10 +768,7 @@ class Parser:
             self.advance()
 
             node = res.register(self.comp_expr())
-            if res.error:
-                return res
-            return res.success(UnaryOpNode(op_tok, node))
-
+            return res if res.error else res.success(UnaryOpNode(op_tok, node))
         node = res.register(
             self.bin_op(self.arith_expr, (TT_EE, TT_NE, TT_LT, TT_GT, TT_LTE, TT_GTE))
         )
@@ -809,10 +798,7 @@ class Parser:
             res.register_advancement()
             self.advance()
             factor = res.register(self.factor())
-            if res.error:
-                return res
-            return res.success(UnaryOpNode(tok, factor))
-
+            return res if res.error else res.success(UnaryOpNode(tok, factor))
         return self.power()
 
     def power(self):
@@ -829,10 +815,7 @@ class Parser:
             self.advance()
             arg_nodes = []
 
-            if self.current_tok.type == TT_RPAREN:
-                res.register_advancement()
-                self.advance()
-            else:
+            if self.current_tok.type != TT_RPAREN:
                 arg_nodes.append(res.register(self.expr()))
                 if res.error:
                     return res.failure(
@@ -851,17 +834,18 @@ class Parser:
                     if res.error:
                         return res
 
-                if self.current_tok.type != TT_RPAREN:
-                    return res.failure(
-                        InvalidSyntaxError(
-                            self.current_tok.pos_start,
-                            self.current_tok.pos_end,
-                            f"Expwected ',' or ')'",
-                        )
+            if self.current_tok.type != TT_RPAREN:
+                return res.failure(
+                    InvalidSyntaxError(
+                        self.current_tok.pos_start,
+                        self.current_tok.pos_end,
+                        "Expwected ',' or ')'",
                     )
+                )
 
-                res.register_advancement()
-                self.advance()
+
+            res.register_advancement()
+            self.advance()
             return res.success(CallNode(atom, arg_nodes))
         return res.success(atom)
 
@@ -890,11 +874,7 @@ class Parser:
             expr = res.register(self.expr())
             if res.error:
                 return res
-            if self.current_tok.type == TT_RPAREN:
-                res.register_advancement()
-                self.advance()
-                return res.success(expr)
-            else:
+            if self.current_tok.type != TT_RPAREN:
                 return res.failure(
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
@@ -903,36 +883,24 @@ class Parser:
                     )
                 )
 
+            res.register_advancement()
+            self.advance()
+            return res.success(expr)
         elif tok.type == TT_LSQUARE:
             list_expr = res.register(self.list_expr())
-            if res.error:
-                return res
-            return res.success(list_expr)
-
+            return res if res.error else res.success(list_expr)
         elif tok.matches(TT_KEYWORD, "IF"):
             if_expr = res.register(self.if_expr())
-            if res.error:
-                return res
-            return res.success(if_expr)
-
+            return res if res.error else res.success(if_expr)
         elif tok.matches(TT_KEYWORD, "FOR"):
             for_expr = res.register(self.for_expr())
-            if res.error:
-                return res
-            return res.success(for_expr)
-
+            return res if res.error else res.success(for_expr)
         elif tok.matches(TT_KEYWORD, "WHILE"):
             while_expr = res.register(self.while_expr())
-            if res.error:
-                return res
-            return res.success(while_expr)
-
+            return res if res.error else res.success(while_expr)
         elif tok.matches(TT_KEYWORD, "FWUNCTION"):
             func_def = res.register(self.func_def())
-            if res.error:
-                return res
-            return res.success(func_def)
-
+            return res if res.error else res.success(func_def)
         return res.failure(
             InvalidSyntaxError(
                 tok.pos_start,
@@ -951,17 +919,15 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected '['",
+                    "Expwected '['",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
 
-        if self.current_tok.type == TT_RSQUARE:
-            res.register_advancement()
-            self.advance()
-        else:
+        if self.current_tok.type != TT_RSQUARE:
             element_nodes.append(res.register(self.expr()))
             if res.error:
                 return res.failure(
@@ -980,18 +946,18 @@ class Parser:
                 if res.error:
                     return res
 
-            if self.current_tok.type != TT_RSQUARE:
-                return res.failure(
-                    InvalidSyntaxError(
-                        self.current_tok.pos_start,
-                        self.current_tok.pos_end,
-                        f"Expwected ',' or ']'",
-                    )
+        if self.current_tok.type != TT_RSQUARE:
+            return res.failure(
+                InvalidSyntaxError(
+                    self.current_tok.pos_start,
+                    self.current_tok.pos_end,
+                    "Expwected ',' or ']'",
                 )
+            )
 
-            res.register_advancement()
-            self.advance()
 
+        res.register_advancement()
+        self.advance()
         return res.success(
             ListNode(element_nodes, pos_start, self.current_tok.pos_end.copy())
         )
@@ -1024,10 +990,7 @@ class Parser:
                     return res
                 else_case = (statements, True)
 
-                if self.current_tok.matches(TT_KEYWORD, "END"):
-                    res.register_advancement()
-                    self.advance()
-                else:
+                if not self.current_tok.matches(TT_KEYWORD, "END"):
                     return res.failure(
                         InvalidSyntaxError(
                             self.current_tok.pos_start,
@@ -1035,6 +998,8 @@ class Parser:
                             "Expwected 'END'",
                         )
                     )
+                res.register_advancement()
+                self.advance()
             else:
                 expr = res.register(self.statement())
                 if res.error:
@@ -1085,9 +1050,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'THWEN'",
+                    "Expwected 'THWEN'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1132,9 +1098,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'FOR'",
+                    "Expwected 'FOR'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1144,9 +1111,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected identifier",
+                    "Expwected identifier",
                 )
             )
+
 
         var_name = self.current_tok
         res.register_advancement()
@@ -1157,9 +1125,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected '='",
+                    "Expwected '='",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1173,9 +1142,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'TO'",
+                    "Expwected 'TO'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1199,9 +1169,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expected 'THWEN'",
+                    "Expected 'THWEN'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1219,9 +1190,10 @@ class Parser:
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
                         self.current_tok.pos_end,
-                        f"Expwected 'END'",
+                        "Expwected 'END'",
                     )
                 )
+
 
             res.register_advancement()
             self.advance()
@@ -1246,9 +1218,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expected 'WHILE'",
+                    "Expected 'WHILE'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1262,9 +1235,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'THWEN'",
+                    "Expwected 'THWEN'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1282,9 +1256,10 @@ class Parser:
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
                         self.current_tok.pos_end,
-                        f"Expwected 'END'",
+                        "Expwected 'END'",
                     )
                 )
+
 
             res.register_advancement()
             self.advance()
@@ -1292,10 +1267,7 @@ class Parser:
             return res.success(WhileNode(condition, body, True))
 
         body = res.register(self.statement())
-        if res.error:
-            return res
-
-        return res.success(WhileNode(condition, body, False))
+        return res if res.error else res.success(WhileNode(condition, body, False))
 
     def func_def(self):
         res = ParseResult()
@@ -1305,9 +1277,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'FWUNCTION'",
+                    "Expwected 'FWUNCTION'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1321,9 +1294,10 @@ class Parser:
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
                         self.current_tok.pos_end,
-                        f"Expwected '('",
+                        "Expwected '('",
                     )
                 )
+
         else:
             var_name_tok = None
             if self.current_tok.type != TT_LPAREN:
@@ -1331,9 +1305,10 @@ class Parser:
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
                         self.current_tok.pos_end,
-                        f"Expwected identifier or '('",
+                        "Expwected identifier or '('",
                     )
                 )
+
 
         res.register_advancement()
         self.advance()
@@ -1353,9 +1328,10 @@ class Parser:
                         InvalidSyntaxError(
                             self.current_tok.pos_start,
                             self.current_tok.pos_end,
-                            f"Expwected identifiew",
+                            "Expwected identifiew",
                         )
                     )
+
 
                 arg_name_toks.append(self.current_tok)
                 res.register_advancement()
@@ -1366,18 +1342,19 @@ class Parser:
                     InvalidSyntaxError(
                         self.current_tok.pos_start,
                         self.current_tok.pos_end,
-                        f"Expwected ',' or ')'",
+                        "Expwected ',' or ')'",
                     )
                 )
-        else:
-            if self.current_tok.type != TT_RPAREN:
-                return res.failure(
-                    InvalidSyntaxError(
-                        self.current_tok.pos_start,
-                        self.current_tok.pos_end,
-                        f"Expwected identifiew or ')'",
-                    )
+
+        elif self.current_tok.type != TT_RPAREN:
+            return res.failure(
+                InvalidSyntaxError(
+                    self.current_tok.pos_start,
+                    self.current_tok.pos_end,
+                    "Expwected identifiew or ')'",
                 )
+            )
+
 
         res.register_advancement()
         self.advance()
@@ -1397,9 +1374,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected '->' or NEWLINE",
+                    "Expwected '->' or NEWLINE",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1413,9 +1391,10 @@ class Parser:
                 InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    f"Expwected 'END'",
+                    "Expwected 'END'",
                 )
             )
+
 
         res.register_advancement()
         self.advance()
@@ -1425,7 +1404,7 @@ class Parser:
     ###################################
 
     def bin_op(self, func_a, ops, func_b=None):
-        if func_b == None:
+        if func_b is None:
             func_b = func_a
 
         res = ParseResult()
@@ -1606,15 +1585,14 @@ class Number(Value):
             return None, Value.illegal_operation(self, other)
 
     def dived_by(self, other):
-        if isinstance(other, Number):
-            if other.value == 0:
-                return None, RTError(
-                    other.pos_start, other.pos_end, "Division by zero", self.context
-                )
-
-            return Number(self.value / other.value).set_context(self.context), None
-        else:
+        if not isinstance(other, Number):
             return None, Value.illegal_operation(self, other)
+        if other.value == 0:
+            return None, RTError(
+                other.pos_start, other.pos_end, "Division by zero", self.context
+            )
+
+        return Number(self.value / other.value).set_context(self.context), None
 
     def powed_by(self, other):
         if isinstance(other, Number):
@@ -1805,42 +1783,39 @@ class List(Value):
         return new_list, None
 
     def subbed_by(self, other):
-        if isinstance(other, Number):
-            new_list = self.copy()
-            try:
-                new_list.elements.pop(other.value)
-                return new_list, None
-            except:
-                return None, RTError(
-                    other.pos_start,
-                    other.pos_end,
-                    "Elewent at this index cowuld not be retwieved fwom list becauwse index is ouwt of bouwnd",
-                    self.context,
-                )
-        else:
+        if not isinstance(other, Number):
             return None, Value.illegal_operation(self, other)
+        new_list = self.copy()
+        try:
+            new_list.elements.pop(other.value)
+            return new_list, None
+        except:
+            return None, RTError(
+                other.pos_start,
+                other.pos_end,
+                "Elewent at this index cowuld not be retwieved fwom list becauwse index is ouwt of bouwnd",
+                self.context,
+            )
 
     def multed_by(self, other):
-        if isinstance(other, List):
-            new_list = self.copy()
-            new_list.elements.extend(other.elements)
-            return new_list, None
-        else:
+        if not isinstance(other, List):
             return None, Value.illegal_operation(self, other)
+        new_list = self.copy()
+        new_list.elements.extend(other.elements)
+        return new_list, None
 
     def dived_by(self, other):
-        if isinstance(other, Number):
-            try:
-                return self.elements[other.value], None
-            except:
-                return None, RTError(
-                    other.pos_start,
-                    other.pos_end,
-                    "Elewent at this index cowuld not be retwieved fwom list becauwse index is ouwt of bouwnds",
-                    self.context,
-                )
-        else:
+        if not isinstance(other, Number):
             return None, Value.illegal_operation(self, other)
+        try:
+            return self.elements[other.value], None
+        except:
+            return None, RTError(
+                other.pos_start,
+                other.pos_end,
+                "Elewent at this index cowuld not be retwieved fwom list becauwse index is ouwt of bouwnds",
+                self.context,
+            )
 
     def copy(self):
         copy = List(self.elements)
@@ -1923,7 +1898,7 @@ class Function(BaseFunction):
             return res
 
         value = res.register(interpreter.visit(self.body_node, exec_ctx))
-        if res.should_return() and res.func_return_value == None:
+        if res.should_return() and res.func_return_value is None:
             return res
 
         ret_value = (
@@ -1961,9 +1936,7 @@ class BuiltInFunction(BaseFunction):
             return res
 
         return_value = res.register(method(exec_ctx))
-        if res.should_return():
-            return res
-        return res.success(return_value)
+        return res if res.should_return() else res.success(return_value)
 
     def no_visit_method(self, node, context):
         raise Exception(f"No execuwte_{self.name} method defiwed")
@@ -1980,7 +1953,7 @@ class BuiltInFunction(BaseFunction):
     #####################################
 
     def execute_print(self, exec_ctx):
-        print(str(exec_ctx.symbol_table.get("value")))
+        print(exec_ctx.symbol_table.get("value"))
         return RTResult().success(Number.null)
 
     execute_print.arg_names = ["value"]
@@ -2128,14 +2101,18 @@ class BuiltInFunction(BaseFunction):
     def execute_len(self, exec_ctx):
         list_ = exec_ctx.symbol_table.get("list")
 
-        if not isinstance(list_, List):
-            return RTResult().failure(
+        return (
+            RTResult().success(Number(len(list_.elements)))
+            if isinstance(list_, List)
+            else RTResult().failure(
                 RTError(
-                    self.pos_start, self.pos_end, "Arguwment muwst be list", exec_ctx
+                    self.pos_start,
+                    self.pos_end,
+                    "Arguwment muwst be list",
+                    exec_ctx,
                 )
             )
-
-        return RTResult().success(Number(len(list_.elements)))
+        )
 
     execute_len.arg_names = ["list"]
 
@@ -2162,10 +2139,11 @@ class BuiltInFunction(BaseFunction):
                 RTError(
                     self.pos_start,
                     self.pos_end,
-                    f'TwT Failed to load scwipt "{fn}"\n' + str(e),
+                    f'TwT Failed to load scwipt "{fn}"\n{str(e)}',
                     exec_ctx,
                 )
             )
+
 
         _, error = run(fn, script)
 
@@ -2226,9 +2204,7 @@ class SymbolTable:
 
     def get(self, name):
         value = self.symbols.get(name, None)
-        if value == None and self.parent:
-            return self.parent.get(name)
-        return value
+        return self.parent.get(name) if value is None and self.parent else value
 
     def set(self, name, value):
         self.symbols[name] = value
@@ -2588,11 +2564,10 @@ def run(fn, text):
     return result.value, result.error
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        with open(sys.argv[1], "r") as fiwe:
-            cwode = fiwe.read()
-        result, error = run(sys.argv[1], cwode)
-        if error:
-            print(error.as_string())
-        sys.exit(0 if not error else 1)
+if __name__ == "__main__" and len(sys.argv) > 1:
+    with open(sys.argv[1], "r") as fiwe:
+        cwode = fiwe.read()
+    result, error = run(sys.argv[1], cwode)
+    if error:
+        print(error.as_string())
+    sys.exit(1 if error else 0)
